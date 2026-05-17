@@ -1,0 +1,54 @@
+# darkforge-edr default rule pack.
+#
+# Match semantics:
+#   - `name`: process basename, case-insensitive, OR over the list.
+#   - `cmdline_contains`: substring match, OR over the list.
+#   - `cmdline_regex`: Go RE2 syntax, OR over the list.
+#   - Multiple clauses in `when` are ANDed.
+
+rules:
+  - name: suspicious_shell_spawn
+    severity: high
+    when:
+      name: ["bash", "sh", "zsh", "ksh", "dash"]
+      cmdline_contains: ["/dev/tcp/", "nc -e", "ncat -e", "0>&1", "bash -i"]
+    tags: ["reverse-shell", "mitre:T1059"]
+
+  - name: powershell_encoded_command
+    severity: high
+    when:
+      name: ["powershell.exe", "pwsh.exe"]
+      cmdline_regex:
+        - '(?i)-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,}'
+    tags: ["mitre:T1059.001", "obfuscated-command"]
+
+  - name: lolbin_curl_pipe_shell
+    severity: medium
+    when:
+      name: ["curl", "wget"]
+      cmdline_regex:
+        - '\|\s*(sh|bash|python|python3|perl|ruby)\b'
+    tags: ["lolbin", "mitre:T1105"]
+
+  - name: scheduled_task_recon
+    severity: low
+    when:
+      name: ["crontab", "at", "schtasks.exe"]
+      cmdline_contains: ["-l", "/query"]
+    tags: ["mitre:T1053"]
+
+  - name: credential_dump_tool
+    severity: critical
+    when:
+      cmdline_contains:
+        - "mimikatz"
+        - "secretsdump.py"
+        - "lsass.dmp"
+    tags: ["mitre:T1003", "credential-access"]
+
+  - name: cleartext_password_in_args
+    severity: medium
+    when:
+      cmdline_regex:
+        - '(?i)(--password|-pwd|-pass)[ =][^ ]{4,}'
+    tags: ["opsec", "credentials-in-args"]
