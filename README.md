@@ -1,8 +1,8 @@
 # darkforge-edr
 
-> A lightweight endpoint detection agent in Go. Watches processes, scores them against a YAML rulepack, and ships alerts to a local JSON log or any HTTP collector.
+> A lightweight endpoint detection agent in Go. Watches processes, scores them against a YAML rulepack, and writes alerts to a local JSON log.
 
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)]() [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -10,10 +10,10 @@
 
 `darkforge-edr` is a small, hackable endpoint-detection agent designed as a learning playground for blue-team / detection-engineering concepts:
 
-- **Process telemetry** — polls running processes, emits create/exit events.
-- **Rule engine** — YAML rules match against process name, command line, and parent-child chains.
-- **Alert sink** — writes JSON-lines to disk by default, optionally POSTs to an HTTP collector.
-- **Tiny binary** — single Go executable, no runtime deps, runs as a non-root daemon for a baseline view.
+- **Process telemetry** — polls `/proc` on Linux, emitting an event the first time it sees a PID.
+- **Rule engine** — YAML rules match against process name and command line (substring or regex). The parent PID is recorded on the alert but is not matchable yet.
+- **Alert sink** — appends JSON-lines to a file, or writes them to stdout with `--out -`.
+- **Tiny binary** — single Go executable, no runtime deps, runs unprivileged in the foreground.
 
 The point isn't to compete with CrowdStrike. It's to walk the *anatomy* of an EDR — collector → ruleset → alert pipeline — in a few hundred lines you can read in one sitting. Useful for SOC / blue-team interviews because every layer is inspectable.
 
@@ -24,15 +24,20 @@ The point isn't to compete with CrowdStrike. It's to walk the *anatomy* of an ED
 ```bash
 go install github.com/forgehk/darkforge-edr/cmd/dfedr@latest
 
-# run with the default rulepack
+# poll every second against ./rules.yaml, appending to ./alerts.jsonl
 dfedr run
 
-# run with a custom rulepack and write alerts to alerts.jsonl
-dfedr run --rules ./rules.yaml --out ./alerts.jsonl
+# custom rulepack, alert log and poll interval
+dfedr run --rules ./rules.yaml --out ./alerts.jsonl --interval 2s
+
+# stream alerts to stdout instead of a file
+dfedr run --out -
 
 # tail alerts in another terminal
 tail -f alerts.jsonl | jq .
 ```
+
+`dfedr run` stays in the foreground and shuts down cleanly on Ctrl-C or SIGTERM.
 
 Sample alert (one per line, JSON):
 
@@ -100,19 +105,19 @@ Match semantics:
 
 ```
 ┌──────────────────────────┐
-│    process collector     │ → /proc on Linux, ps fallback on macOS,
-│    (poll every 1s)       │   Win32 toolhelp on Windows.
+│    process collector     │ → /proc on Linux. macOS and Windows
+│    (poll every 1s)       │   collectors are not written yet.
 └────────────┬─────────────┘
-             │ events: process_create, process_exit
+             │ events: newly-seen PIDs
              ▼
 ┌──────────────────────────┐
-│      rule engine         │ ← rules.yaml
+│      rule engine         │ ↀ rules.yaml
 │  name / cmdline / regex  │
 └────────────┬─────────────┘
              │ matched events
              ▼
 ┌──────────────────────────┐
-│       alert sink         │ → JSON-lines file, optional HTTP collector
+│       alert sink         │ → JSON-lines file, or stdout
 └──────────────────────────┘
 ```
 
@@ -152,6 +157,9 @@ It's also a good interview artifact for **SOC / Blue Team** roles because every 
 - [x] YAML rule engine with name/cmdline/regex matching
 - [x] JSON-lines alert sink
 - [x] Tag system for MITRE ATT&CK mapping
+- [x] `dfedr` CLI (`run`, `version`)
+- [ ] HTTP collector sink
+- [ ] Parent-child chain matching in rules
 - [ ] File-create / file-modify collector (fanotify on Linux)
 - [ ] Network-connect collector
 - [ ] eBPF syscall hooks
