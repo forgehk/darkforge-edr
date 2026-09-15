@@ -111,7 +111,7 @@ Match semantics:
              │ events: newly-seen PIDs
              ▼
 ┌──────────────────────────┐
-│      rule engine         │ ↀ rules.yaml
+│      rule engine         │ ← rules.yaml
 │  name / cmdline / regex  │
 └────────────┬─────────────┘
              │ matched events
