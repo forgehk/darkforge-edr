@@ -2,7 +2,7 @@
 
 > A lightweight endpoint detection agent in Go. Watches processes, scores them against a YAML rulepack, and writes alerts to a local JSON log.
 
-![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/forgehk/darkforge-edr/actions/workflows/ci.yml/badge.svg)](https://github.com/forgehk/darkforge-edr/actions/workflows/ci.yml) ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -133,6 +133,8 @@ cd darkforge-edr
 go build ./cmd/dfedr
 go test ./...
 ```
+
+CI runs `gofmt`, `go vet` and the tests with the race detector on Go 1.22 and the current release on every push, then starts the built binary against the shipped `rules.yaml` to make sure the default rule pack still loads.
 
 Cross-compile for another OS:
 
