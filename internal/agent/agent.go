@@ -18,6 +18,9 @@ type Agent struct {
 	Interval time.Duration
 	Host     string
 
+	// list returns the current process table. It is proc.List unless a test
+	// replaces it.
+	list func() ([]proc.Process, error)
 	seen map[int]struct{}
 }
 
@@ -32,6 +35,7 @@ func New(pack *rules.Pack, sink alerts.Sink, interval time.Duration) *Agent {
 		Sink:     sink,
 		Interval: interval,
 		Host:     host,
+		list:     proc.List,
 		seen:     map[int]struct{}{},
 	}
 }
@@ -57,7 +61,7 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) tick() error {
-	procs, err := proc.List()
+	procs, err := a.list()
 	if err != nil {
 		return err
 	}
