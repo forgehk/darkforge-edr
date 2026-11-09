@@ -11,7 +11,7 @@
 `darkforge-edr` is a small, hackable endpoint-detection agent designed as a learning playground for blue-team / detection-engineering concepts:
 
 - **Process telemetry** — polls `/proc` on Linux, emitting an event the first time it sees a PID.
-- **Rule engine** — YAML rules match against process name and command line (substring or regex). The parent PID is recorded on the alert but is not matchable yet.
+- **Rule engine** — YAML rules match against process name, parent process name and command line (substring or regex).
 - **Alert sink** — appends JSON-lines to a file, or writes them to stdout with `--out -`.
 - **Tiny binary** — single Go executable, no runtime deps, runs unprivileged in the foreground.
 
@@ -90,11 +90,19 @@ rules:
       name: ["crontab", "at", "schtasks.exe"]
       cmdline_contains: ["-l", "/query"]
     tags: ["mitre:T1053"]
+
+  - name: webserver_spawned_shell
+    severity: high
+    when:
+      name: ["sh", "bash"]
+      parent_name: ["nginx", "apache2", "php-fpm"]
+    tags: ["webshell", "mitre:T1505.003"]
 ```
 
 Match semantics:
 
 - `name`: exact match against the process basename (any in the list passes).
+- `parent_name`: exact, case-insensitive match against the parent's name, resolved from the same process snapshot. If the parent is not in the snapshot (it has already exited), the clause does not match.
 - `cmdline_contains`: any substring in the list passes.
 - `cmdline_regex`: at least one regex must match (Go RE2 syntax).
 - All clauses inside `when` are ANDed; if multiple list-style clauses, each requires at least one match.
@@ -161,7 +169,8 @@ It's also a good interview artifact for **SOC / Blue Team** roles because every 
 - [x] Tag system for MITRE ATT&CK mapping
 - [x] `dfedr` CLI (`run`, `version`)
 - [ ] HTTP collector sink
-- [ ] Parent-child chain matching in rules
+- [x] Parent process name matching in rules (`parent_name`)
+- [ ] Full ancestor-chain matching in rules (grandparents and up)
 - [ ] File-create / file-modify collector (fanotify on Linux)
 - [ ] Network-connect collector
 - [ ] eBPF syscall hooks
