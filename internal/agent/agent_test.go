@@ -115,3 +115,34 @@ func TestTickReturnsListError(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, want)
 	}
 }
+
+const parentRules = `
+rules:
+  - name: webserver_shell
+    severity: high
+    when:
+      name: ["sh"]
+      parent_name: ["nginx"]
+`
+
+func TestTickResolvesParentName(t *testing.T) {
+	pack, err := rules.LoadBytes([]byte(parentRules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &memSink{}
+	a := New(pack, sink, 0)
+	table := []proc.Process{
+		{PID: 10, PPID: 1, Name: "nginx", Cmdline: "nginx: worker"},
+		{PID: 11, PPID: 10, Name: "sh", Cmdline: "sh -c id"},    // child of nginx: alert
+		{PID: 12, PPID: 1, Name: "sh", Cmdline: "sh"},           // parent init is not in the table
+		{PID: 13, PPID: 999, Name: "sh", Cmdline: "sh -c true"}, // parent already exited
+	}
+	a.list = func() ([]proc.Process, error) { return table, nil }
+	if err := a.tick(); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.got) != 1 || sink.got[0].PID != 11 {
+		t.Fatalf("expected one alert for PID 11, got %+v", sink.got)
+	}
+}
