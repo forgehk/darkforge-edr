@@ -66,6 +66,10 @@ func (a *Agent) tick() error {
 		return err
 	}
 	currentPIDs := make(map[int]struct{}, len(procs))
+	names := make(map[int]string, len(procs))
+	for _, p := range procs {
+		names[p.PID] = p.Name
+	}
 	for _, p := range procs {
 		currentPIDs[p.PID] = struct{}{}
 		if _, alreadySeen := a.seen[p.PID]; alreadySeen {
@@ -75,6 +79,7 @@ func (a *Agent) tick() error {
 		// Evaluate rules against the new process.
 		hits := a.Pack.Match(rules.Process{
 			PID: p.PID, PPID: p.PPID, Name: p.Name, Cmdline: p.Cmdline,
+			ParentName: names[p.PPID],
 		})
 		for _, hit := range hits {
 			_ = a.Sink.Emit(alerts.Alert{
