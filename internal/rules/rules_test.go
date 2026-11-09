@@ -119,3 +119,53 @@ func TestCmdlineRegexMatch(t *testing.T) {
 		t.Fatalf("expected encoded match, got %d hits", len(hits))
 	}
 }
+
+const parentPack = `
+rules:
+  - name: webserver_shell
+    severity: high
+    when:
+      name: ["sh", "bash"]
+      parent_name: ["nginx", "apache2", "php-fpm"]
+    tags: ["webshell", "mitre:T1505.003"]
+
+  - name: parent_only
+    severity: low
+    when:
+      parent_name: ["cron"]
+`
+
+func TestParentNameMatches(t *testing.T) {
+	p, err := LoadBytes([]byte(parentPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	hits := p.Match(Process{PID: 7, PPID: 6, Name: "sh", Cmdline: "sh -c id", ParentName: "PHP-FPM"})
+	if len(hits) != 1 || hits[0].Name != "webserver_shell" {
+		t.Fatalf("expected webserver_shell hit, got %+v", hits)
+	}
+}
+
+func TestParentNameMismatchOrUnknown(t *testing.T) {
+	p, err := LoadBytes([]byte(parentPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	for _, parent := range []string{"sshd", ""} {
+		hits := p.Match(Process{Name: "sh", Cmdline: "sh -c id", ParentName: parent})
+		if len(hits) != 0 {
+			t.Errorf("parent %q: expected no hits, got %+v", parent, hits)
+		}
+	}
+}
+
+func TestParentNameAloneIsAValidClause(t *testing.T) {
+	p, err := LoadBytes([]byte(parentPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	hits := p.Match(Process{Name: "backup.sh", Cmdline: "backup.sh", ParentName: "cron"})
+	if len(hits) != 1 || hits[0].Name != "parent_only" {
+		t.Fatalf("expected parent_only hit, got %+v", hits)
+	}
+}
