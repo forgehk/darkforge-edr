@@ -27,6 +27,10 @@ type Process struct {
 	PPID    int
 	Name    string
 	Cmdline string
+
+	// ParentName is the name of the parent process, or empty when the parent
+	// is not in the process table (for example it has already exited).
+	ParentName string
 }
 
 // Rule is one detection rule.
@@ -43,6 +47,7 @@ type Rule struct {
 // When is the match clause.
 type When struct {
 	Name            []string `yaml:"name"`
+	ParentName      []string `yaml:"parent_name"`
 	CmdlineContains []string `yaml:"cmdline_contains"`
 	CmdlineRegex    []string `yaml:"cmdline_regex"`
 }
@@ -100,6 +105,9 @@ func (r *Rule) matches(p Process) bool {
 	if len(r.When.Name) > 0 && !anyEqualFold(r.When.Name, p.Name) {
 		return false
 	}
+	if len(r.When.ParentName) > 0 && !anyEqualFold(r.When.ParentName, p.ParentName) {
+		return false
+	}
 	if len(r.When.CmdlineContains) > 0 && !anyContains(r.When.CmdlineContains, p.Cmdline) {
 		return false
 	}
@@ -108,7 +116,7 @@ func (r *Rule) matches(p Process) bool {
 	}
 	// If a rule has *no* when clauses, treat as non-matching to avoid
 	// accidental match-everything rules.
-	if len(r.When.Name) == 0 && len(r.When.CmdlineContains) == 0 && len(r.compiledRegex) == 0 {
+	if len(r.When.Name) == 0 && len(r.When.ParentName) == 0 && len(r.When.CmdlineContains) == 0 && len(r.compiledRegex) == 0 {
 		return false
 	}
 	return true
