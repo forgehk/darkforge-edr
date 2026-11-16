@@ -169,3 +169,61 @@ func TestParentNameAloneIsAValidClause(t *testing.T) {
 		t.Fatalf("expected parent_only hit, got %+v", hits)
 	}
 }
+
+const ancestorPack = `
+rules:
+  - name: shell_descended_from_webserver
+    severity: high
+    when:
+      name: ["sh", "bash"]
+      ancestor_name: ["nginx", "apache2"]
+    tags: ["webshell", "mitre:T1505.003"]
+
+  - name: ancestor_only
+    severity: low
+    when:
+      ancestor_name: ["sshd"]
+`
+
+func TestAncestorNameMatchesGrandparent(t *testing.T) {
+	p, err := LoadBytes([]byte(ancestorPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	// Parent is a plain shell; the grandparent is nginx.
+	hits := p.Match(Process{
+		PID: 30, PPID: 20, Name: "bash", Cmdline: "bash -c id",
+		ParentName:    "sh",
+		AncestorNames: []string{"sh", "NGINX"},
+	})
+	if len(hits) != 1 || hits[0].Name != "shell_descended_from_webserver" {
+		t.Fatalf("expected webserver-descendant hit, got %+v", hits)
+	}
+}
+
+func TestAncestorNameNoMatchWhenChainIsClean(t *testing.T) {
+	p, err := LoadBytes([]byte(ancestorPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	for _, chain := range [][]string{{"sh", "tmux", "systemd"}, nil} {
+		hits := p.Match(Process{Name: "sh", Cmdline: "sh", AncestorNames: chain})
+		if len(hits) != 0 {
+			t.Errorf("chain %v: expected no hits, got %+v", chain, hits)
+		}
+	}
+}
+
+func TestAncestorNameAloneIsAValidClause(t *testing.T) {
+	p, err := LoadBytes([]byte(ancestorPack))
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	hits := p.Match(Process{
+		Name: "python3", Cmdline: "python3 -c pass",
+		AncestorNames: []string{"bash", "sshd"},
+	})
+	if len(hits) != 1 || hits[0].Name != "ancestor_only" {
+		t.Fatalf("expected ancestor_only hit, got %+v", hits)
+	}
+}
