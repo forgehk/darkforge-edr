@@ -31,6 +31,13 @@ type Process struct {
 	// ParentName is the name of the parent process, or empty when the parent
 	// is not in the process table (for example it has already exited).
 	ParentName string
+
+	// AncestorNames holds the names of every resolvable ancestor, nearest
+	// first: AncestorNames[0] is the parent, [1] the grandparent, and so on.
+	// The walk stops at the first ancestor missing from the process table, so
+	// the slice is empty when even the parent has already exited. The process
+	// itself is never included.
+	AncestorNames []string
 }
 
 // Rule is one detection rule.
@@ -48,6 +55,7 @@ type Rule struct {
 type When struct {
 	Name            []string `yaml:"name"`
 	ParentName      []string `yaml:"parent_name"`
+	AncestorName    []string `yaml:"ancestor_name"`
 	CmdlineContains []string `yaml:"cmdline_contains"`
 	CmdlineRegex    []string `yaml:"cmdline_regex"`
 }
@@ -108,6 +116,9 @@ func (r *Rule) matches(p Process) bool {
 	if len(r.When.ParentName) > 0 && !anyEqualFold(r.When.ParentName, p.ParentName) {
 		return false
 	}
+	if len(r.When.AncestorName) > 0 && !anyAncestorMatch(r.When.AncestorName, p.AncestorNames) {
+		return false
+	}
 	if len(r.When.CmdlineContains) > 0 && !anyContains(r.When.CmdlineContains, p.Cmdline) {
 		return false
 	}
@@ -116,7 +127,8 @@ func (r *Rule) matches(p Process) bool {
 	}
 	// If a rule has *no* when clauses, treat as non-matching to avoid
 	// accidental match-everything rules.
-	if len(r.When.Name) == 0 && len(r.When.ParentName) == 0 && len(r.When.CmdlineContains) == 0 && len(r.compiledRegex) == 0 {
+	if len(r.When.Name) == 0 && len(r.When.ParentName) == 0 && len(r.When.AncestorName) == 0 &&
+		len(r.When.CmdlineContains) == 0 && len(r.compiledRegex) == 0 {
 		return false
 	}
 	return true
@@ -125,6 +137,17 @@ func (r *Rule) matches(p Process) bool {
 func anyEqualFold(haystack []string, needle string) bool {
 	for _, h := range haystack {
 		if strings.EqualFold(h, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyAncestorMatch reports whether any configured ancestor name equals (case-
+// insensitively) any name in the resolved ancestor chain.
+func anyAncestorMatch(wanted, chain []string) bool {
+	for _, name := range chain {
+		if anyEqualFold(wanted, name) {
 			return true
 		}
 	}
