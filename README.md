@@ -97,12 +97,20 @@ rules:
       name: ["sh", "bash"]
       parent_name: ["nginx", "apache2", "php-fpm"]
     tags: ["webshell", "mitre:T1505.003"]
+
+  - name: shell_descended_from_webserver
+    severity: high
+    when:
+      name: ["sh", "bash"]
+      ancestor_name: ["nginx", "apache2", "php-fpm"]
+    tags: ["webshell", "mitre:T1505.003"]
 ```
 
 Match semantics:
 
 - `name`: exact match against the process basename (any in the list passes).
 - `parent_name`: exact, case-insensitive match against the parent's name, resolved from the same process snapshot. If the parent is not in the snapshot (it has already exited), the clause does not match.
+- `ancestor_name`: like `parent_name`, but matches against *any* ancestor — parent, grandparent, and up — resolved by walking the snapshot's PPID links. Use it to catch a shell that a web server spawned through an intermediate process (`nginx → php-fpm → sh`). The walk stops at the first ancestor missing from the snapshot, so a broken chain never matches.
 - `cmdline_contains`: any substring in the list passes.
 - `cmdline_regex`: at least one regex must match (Go RE2 syntax).
 - All clauses inside `when` are ANDed; if multiple list-style clauses, each requires at least one match.
@@ -170,7 +178,7 @@ It's also a good interview artifact for **SOC / Blue Team** roles because every 
 - [x] `dfedr` CLI (`run`, `version`)
 - [ ] HTTP collector sink
 - [x] Parent process name matching in rules (`parent_name`)
-- [ ] Full ancestor-chain matching in rules (grandparents and up)
+- [x] Full ancestor-chain matching in rules (`ancestor_name`, grandparents and up)
 - [ ] File-create / file-modify collector (fanotify on Linux)
 - [ ] Network-connect collector
 - [ ] eBPF syscall hooks
