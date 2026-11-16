@@ -146,3 +146,55 @@ func TestTickResolvesParentName(t *testing.T) {
 		t.Fatalf("expected one alert for PID 11, got %+v", sink.got)
 	}
 }
+
+const ancestorRules = `
+rules:
+  - name: shell_from_webserver_chain
+    severity: high
+    when:
+      name: ["sh"]
+      ancestor_name: ["nginx"]
+`
+
+func TestTickResolvesAncestorChain(t *testing.T) {
+	pack, err := rules.LoadBytes([]byte(ancestorRules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &memSink{}
+	a := New(pack, sink, 0)
+	// nginx(10) -> php-fpm(11) -> sh(12): sh's grandparent is nginx.
+	// init(1) -> sh(13): no nginx in its chain.
+	table := []proc.Process{
+		{PID: 10, PPID: 1, Name: "nginx", Cmdline: "nginx: worker"},
+		{PID: 11, PPID: 10, Name: "php-fpm", Cmdline: "php-fpm: pool"},
+		{PID: 12, PPID: 11, Name: "sh", Cmdline: "sh -c id"},
+		{PID: 13, PPID: 1, Name: "sh", Cmdline: "sh -c true"},
+	}
+	a.list = func() ([]proc.Process, error) { return table, nil }
+	if err := a.tick(); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.got) != 1 || sink.got[0].PID != 12 {
+		t.Fatalf("expected one alert for PID 12 (sh under nginx), got %+v", sink.got)
+	}
+}
+
+func TestAncestorNamesHandlesCycles(t *testing.T) {
+	// A self-referential / cyclic snapshot must terminate, not spin.
+	names := map[int]string{4: "a", 5: "b"}
+	ppids := map[int]int{4: 5, 5: 4} // 4 <-> 5 cycle
+	got := ancestorNames(4, names, ppids)
+	if len(got) != 2 {
+		t.Fatalf("expected chain of 2 before cycle guard trips, got %+v", got)
+	}
+}
+
+func TestAncestorNamesStopsAtMissingParent(t *testing.T) {
+	names := map[int]string{7: "worker"}
+	ppids := map[int]int{7: 999} // 999 not in the table
+	got := ancestorNames(7, names, ppids)
+	if len(got) != 1 || got[0] != "worker" {
+		t.Fatalf("expected chain to stop at missing parent, got %+v", got)
+	}
+}
