@@ -60,6 +60,35 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
+// maxAncestorDepth caps how far up the ancestry chain is walked, so a cycle or
+// a pathological tree in the snapshot cannot spin forever.
+const maxAncestorDepth = 64
+
+// ancestorNames walks from the given PID up through the process table, returning
+// each resolvable ancestor's name nearest-first. The walk stops at the first PID
+// missing from the table (an ancestor that has already exited), at PID 0, on a
+// self-referential or revisited PID, or once maxAncestorDepth is reached.
+func ancestorNames(pid int, names map[int]string, ppids map[int]int) []string {
+	var chain []string
+	visited := make(map[int]struct{})
+	for depth := 0; depth < maxAncestorDepth; depth++ {
+		if pid <= 0 {
+			break
+		}
+		if _, seen := visited[pid]; seen {
+			break // cycle guard
+		}
+		visited[pid] = struct{}{}
+		name, ok := names[pid]
+		if !ok {
+			break // ancestor not in the snapshot; chain ends here
+		}
+		chain = append(chain, name)
+		pid = ppids[pid]
+	}
+	return chain
+}
+
 func (a *Agent) tick() error {
 	procs, err := a.list()
 	if err != nil {
@@ -67,8 +96,10 @@ func (a *Agent) tick() error {
 	}
 	currentPIDs := make(map[int]struct{}, len(procs))
 	names := make(map[int]string, len(procs))
+	ppids := make(map[int]int, len(procs))
 	for _, p := range procs {
 		names[p.PID] = p.Name
+		ppids[p.PID] = p.PPID
 	}
 	for _, p := range procs {
 		currentPIDs[p.PID] = struct{}{}
@@ -79,7 +110,8 @@ func (a *Agent) tick() error {
 		// Evaluate rules against the new process.
 		hits := a.Pack.Match(rules.Process{
 			PID: p.PID, PPID: p.PPID, Name: p.Name, Cmdline: p.Cmdline,
-			ParentName: names[p.PPID],
+			ParentName:    names[p.PPID],
+			AncestorNames: ancestorNames(p.PPID, names, ppids),
 		})
 		for _, hit := range hits {
 			_ = a.Sink.Emit(alerts.Alert{
