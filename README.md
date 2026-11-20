@@ -4,18 +4,20 @@
 
 [![CI](https://github.com/forgehk/darkforge-edr/actions/workflows/ci.yml/badge.svg)](https://github.com/forgehk/darkforge-edr/actions/workflows/ci.yml) ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Status:** a learning project. It walks through the anatomy of an endpoint agent (collector, rules, alert sink) in code you can read in one sitting. It is not a security product and does not replace one: it polls where real agents hook the kernel, it sees processes and nothing else, and it runs on Linux only. [What it cannot see](#what-it-cannot-see) is the full list.
+
 ---
 
 ## What it does
 
 `darkforge-edr` is a small, hackable endpoint-detection agent designed as a learning playground for blue-team / detection-engineering concepts:
 
-- **Process telemetry** — polls `/proc` on Linux, emitting an event the first time it sees a PID.
-- **Rule engine** — YAML rules match against process name, parent process name and command line (substring or regex).
-- **Alert sink** — appends JSON-lines to a file, or writes them to stdout with `--out -`.
-- **Tiny binary** — single Go executable, no runtime deps, runs unprivileged in the foreground.
+- **Process telemetry**: polls `/proc` on Linux, emitting an event the first time it sees a PID.
+- **Rule engine**: YAML rules match against process name, parent process name and command line (substring or regex).
+- **Alert sink**: appends JSON-lines to a file, or writes them to stdout with `--out -`.
+- **Tiny binary**: single Go executable, no runtime deps, runs unprivileged in the foreground.
 
-The point isn't to compete with CrowdStrike. It's to walk the *anatomy* of an EDR — collector → ruleset → alert pipeline — in a few hundred lines you can read in one sitting. Useful for SOC / blue-team interviews because every layer is inspectable.
+The point isn't to compete with CrowdStrike. It's to walk the *anatomy* of an EDR: collector → ruleset → alert pipeline: in a few hundred lines you can read in one sitting. Useful for SOC / blue-team interviews because every layer is inspectable.
 
 ---
 
@@ -56,6 +58,31 @@ Sample alert (one per line, JSON):
 ```
 
 ---
+
+## A real alert, from a harmless command
+
+Start the agent, then run a command that does nothing but sleep. The text the rule looks for is inside a comment:
+
+```console
+$ dfedr run --out - --interval 200ms &
+dfedr dev: 6 rules from rules.yaml, polling every 200ms, alerts → -
+
+$ bash -c 'sleep 2; true # /dev/tcp/ demo'
+{"ts":"2026-11-20T07:37:34Z","rule":"suspicious_shell_spawn","severity":"high","pid":2382,"ppid":2380,"name":"bash","cmdline":"bash -c sleep 2; true # /dev/tcp/ demo","host":"vm","tags":["reverse-shell","mitre:T1059"]}
+```
+
+The collector saw a new PID, read its name and command line from `/proc`, and handed the event to the rule engine. `suspicious_shell_spawn` matched because a shell's command line contained `/dev/tcp/`, and the sink wrote one JSON line.
+
+It is also a false positive, and that is the point of the example: a rule that matches text fires on any command that contains the text. Real rule packs spend most of their effort on that problem.
+
+## What it cannot see
+
+- **Processes that start and finish between two polls.** At the default one-second interval a short command is usually gone before the agent looks. At 200 ms it caught six of six one-second processes in a test, which says nothing about a process that lives for 50 ms.
+- **Anything a process does after it starts.** There is no file, network or memory telemetry. An event is one snapshot of a PID the first time it appears.
+- **The truth about a process.** A name and a command line are whatever the process reports. Both can be changed by the process itself.
+- **Other users' processes on a hardened system.** It runs unprivileged and reads what `/proc` shows that user. Where `/proc` is mounted with `hidepid`, that is only its own processes.
+- **Anything on macOS or Windows.** Those collectors are not written. The rule pack has Windows rules in it, and on Linux they never fire.
+- **Tampering.** Anyone who can kill the agent or edit the alert file can do so. Nothing protects either.
 
 ## Rule pack format
 
@@ -110,7 +137,7 @@ Match semantics:
 
 - `name`: exact match against the process basename (any in the list passes).
 - `parent_name`: exact, case-insensitive match against the parent's name, resolved from the same process snapshot. If the parent is not in the snapshot (it has already exited), the clause does not match.
-- `ancestor_name`: like `parent_name`, but matches against *any* ancestor — parent, grandparent, and up — resolved by walking the snapshot's PPID links. Use it to catch a shell that a web server spawned through an intermediate process (`nginx → php-fpm → sh`). The walk stops at the first ancestor missing from the snapshot, so a broken chain never matches.
+- `ancestor_name`: like `parent_name`, but matches against *any* ancestor: parent, grandparent, and up: resolved by walking the snapshot's PPID links. Use it to catch a shell that a web server spawned through an intermediate process (`nginx → php-fpm → sh`). The walk stops at the first ancestor missing from the snapshot, so a broken chain never matches.
 - `cmdline_contains`: any substring in the list passes.
 - `cmdline_regex`: at least one regex must match (Go RE2 syntax).
 - All clauses inside `when` are ANDed; if multiple list-style clauses, each requires at least one match.
@@ -163,7 +190,7 @@ GOOS=darwin GOARCH=arm64 go build -o dist/dfedr-darwin-arm64 ./cmd/dfedr
 
 ## Why I built this
 
-I wanted to understand what's *actually* inside an EDR rather than just reading vendor data sheets. This agent is the result — a clean, readable scaffold I can extend with new collectors (file events, network connects, syscalls via eBPF) over time.
+I wanted to understand what's *actually* inside an EDR rather than just reading vendor data sheets. This agent is the result: a clean, readable scaffold I can extend with new collectors (file events, network connects, syscalls via eBPF) over time.
 
 It's also a good interview artifact for **SOC / Blue Team** roles because every part is small enough to walk through line by line.
 
@@ -194,4 +221,4 @@ It's also a good interview artifact for **SOC / Blue Team** roles because every 
 
 ---
 
-*Built by [@forgehk](https://github.com/forgehk) — [DarkForge AI](https://darkforgeai.com)*
+*Built by [@forgehk](https://github.com/forgehk): [DarkForge AI](https://darkforgeai.com)*
